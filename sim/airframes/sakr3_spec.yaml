@@ -1,0 +1,39 @@
+# SAKR3 / MyCustomF405 quad — base airframe spec for the ArduPilot SITL frame model.
+#
+# Every value carries its source. "readme" = SAKR3-MyCustomF405-UAV/readme.md;
+# "estimate" = engineering guess, to be replaced by measurement/collaborator data;
+# "ap_default" = ArduCopter/SITL default, must match the real vehicle's parameters.
+#
+# make_airframe.py turns this into a SITL JSON model for any (mass, thrust derate) point
+# while keeping the propulsion and drag physics identical across the family.
+
+frame: x                     # quad X (FRAME_CLASS 1, FRAME_TYPE 1)
+
+base_mass_kg: 1.40           # readme: AUW 1.20-1.60 kg; 1.40 = mid point
+max_total_thrust_n: 23.5     # readme: ~2.40 kg total (~600 g/motor, 3S, 1045), assumed at full pack voltage
+moment_inertia: [0.02, 0.02, 0.04]   # readme estimate, kg*m^2 (payload treated as point mass at CG)
+
+arm_length_m: 0.225          # estimate: 450-class frame (motor-to-motor 450 mm). TBC with collaborator.
+                             # SITL's "diagonal_size" is used as the centre-to-motor distance.
+disc_area_m2: 0.203          # 4 x 10 in props
+propExpo: 0.65               # ap_default MOT_THST_EXPO; must equal the real vehicle's value
+pwmMin: 1000                 # ap_default MOT_PWM_MIN
+pwmMax: 2000                 # ap_default MOT_PWM_MAX
+spin_min: 0.15               # ap_default MOT_SPIN_MIN
+spin_max: 0.95               # ap_default MOT_SPIN_MAX (physical ESC/motor range in the model)
+slew_max: 150                # SITL default; motor time constant still to be measured
+refRotRate: 120              # SITL default yaw response, deg/s
+
+# drag / power reference point (used by SITL to derive drag coefficient and current draw)
+refSpd: 12.0                 # estimate, m/s at refAngle in still air
+refAngle: 30.0               # estimate, deg
+refVoltage: 11.4             # estimate, V under hover load
+refCurrent: 15.0             # estimate, A at hover for base_mass (2212/920KV + 1045, ~350 g/motor)
+mdrag_coef: 0.2              # SITL default momentum drag coefficient
+refAlt: 584                  # m AMSL; equal to the SITL home altitude so air density matches
+refTempC: 25
+
+# battery: YUAN H 3S 4200 mAh 35C (readme)
+maxVoltage: 12.6
+battCapacityAh: 4.2
+refBatRes: 0.02              # estimate, ohm (pack + wiring)

@@ -1,0 +1,11 @@
+name: motor_fault
+description: >
+  Hold position while motor 1 loses part of its output at 8 s (SITL SIM_ENGINE_FAIL bit 0, its PWM above
+  1000 scaled by SIM_ENGINE_MUL = 0.8): a sudden, asymmetric loss the law is not told about.
+task:
+  duration_s: 30.0
+  events:
+    - {t_s: 8.0, params: {SIM_ENGINE_MUL: 0.8, SIM_ENGINE_FAIL: 1}}
+pass:                       # proposal, set before the first flight
+  ev0_max_dev_m: 0.5
+  ev0_recover_s: 8.0

@@ -1,0 +1,25 @@
+# Core evaluation suite: one outer-loop law across the task library and the family (analysed by
+# analysis/scorecard.py). Every task at every theta point (mass x derate) with 3 seeds: 7 x 6 x 3 = 126
+# runs, ~6 min on 20 workers. Fly another law with the same suite and keep its own table:
+#   python runner/batch.py scenarios/batches/suite_core.yaml --set controller.law=mymod:MyLaw --name suite_core__mylaw
+# 3 seeds screen a law; for a statistical comparison between laws use 60 seeds per point (T5).
+# The pass bounds live in scenarios/tasks/*.yaml; they are proposals, set before the first flight.
+# `headline` names the metric the scorecard shows per task (worst over the theta points; `ev*` = max
+# over the task's events).
+name: suite_core
+description: core suite (7 tasks x mass 1.2/1.4/1.6 kg x derate 1.0/0.85 x 3 seeds), profile A
+workers: 20
+groups:
+  - {label: hover_gust, base: ../tasks/hover_gust.yaml, headline: hold_rms_h_m}
+  - {label: steps, base: ../tasks/steps.yaml, headline: iae_m_s}
+  - {label: circle, base: ../tasks/circle.yaml, headline: traj_rms_m}
+  - {label: figure8, base: ../tasks/figure8.yaml, headline: traj_rms_m}
+  - {label: push, base: ../tasks/push.yaml, headline: "ev*_max_dev_m"}
+  - {label: motor_fault, base: ../tasks/motor_fault.yaml, headline: ev0_max_dev_m}
+  - {label: derate_drop, base: ../tasks/derate_drop.yaml, headline: ev0_max_dev_m}
+common:                          # applied to every group (set + sweep)
+  set: {run.setup_speedup: 10}
+  sweep:
+    vehicle.mass_kg: [1.2, 1.4, 1.6]
+    vehicle.derate: [1.0, 0.85]
+    run.seed: [1, 2, 3]

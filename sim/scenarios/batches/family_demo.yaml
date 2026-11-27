@@ -1,0 +1,21 @@
+# Parameter-family demo: the T5 task across take-off mass and thrust derate, 3 seeds per point.
+# Shows the intended use: one scenario, a sweep over theta, a metrics table with pass rates.
+# Outer loop at 1x (T5: 2x is also consistent, >= 5x is not), boot/takeoff/landing at 10x.
+#
+# Pass bounds are illustrative. The final-error bound covers the step segments seg1-4 only: seg0, the
+# 8 s right after handover, is still settling against the wind (0.27-0.44 m in the first run of this
+# batch, which applied the bound to seg0 too and failed every point on it).
+name: m3_family_demo
+description: SAKR3 family (mass 1.2-1.6 kg x derate 1.0 / 0.85), T4 steps in 2 m/s wind, PD test controller
+base: ../t5_steps_wind.yaml
+workers: 18
+set:
+  run.setup_speedup: 10
+  pass:
+    "seg*_overshoot_pct": 30
+    "seg[1-4]_final_err_m": 0.15
+    hold_rms_h_m: 0.2
+sweep:
+  vehicle.mass_kg: [1.2, 1.4, 1.6]
+  vehicle.derate: [1.0, 0.85]
+  run.seed: [1, 2, 3]

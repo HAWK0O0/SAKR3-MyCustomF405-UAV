@@ -1,0 +1,13 @@
+name: derate_drop
+description: >
+  Hold position while the available thrust drops to 85 % of the variant's at 8 s (event derate: 0.85,
+  applied through MOT_SPIN_MAX like vehicle.derate), as from a sagging battery: theta changes during the
+  run, unannounced.
+task:
+  duration_s: 30.0
+  events:
+    - {t_s: 8.0, derate: 0.85}
+pass:                       # proposal, set before the first flight
+  ev0_max_dev_m: 0.3
+  ev0_recover_s: 6.0
+  hold_rms_v_m: 0.1

@@ -1,0 +1,25 @@
+name: t4b_steps_flow
+description: >
+  T4 under sensor profile B (optical flow + rangefinder, no GPS; params/sensors_flow.parm): the same
+  vehicle, task and controller as t4_steps, only the sensors differ. Still air (indoor).
+  The client sets the EKF origin to SITL home before takeoff (no GPS to provide one).
+
+environment:
+  sensors: flow
+
+task:
+  duration_s: 56.0
+  steps:
+    - [0.0, 0.0, 0.0, 0.0]
+    - [8.0, 0.0, 0.0, -1.0]
+    - [20.0, 0.0, 0.0, 0.0]
+    - [32.0, 2.0, 0.0, 0.0]
+    - [44.0, 0.0, 0.0, 0.0]
+
+controller:
+  args:
+    gains: {ki_xy: 0.0}
+
+pass:                       # T4's step-shape checks
+  "seg*_overshoot_pct": 25
+  "seg*_rise_s": 4

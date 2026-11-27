@@ -1,0 +1,22 @@
+# M4: T4 steps under sensor profile B vs A (analysed by tests/t4b_profiles.py).
+#   flow         profile B, 60 seeds, boot/takeoff/landing at 10x  -> T4-B, noise floor under B
+#   flow_full_1x profile B, 60 seeds, everything at 1x             -> is the fast setup still harmless under B?
+#   gps          profile A, 60 seeds, setup at 10x                 -> the same task with GPS, for the A/B table
+# Same vehicle (1.40 kg), task, PD law (no horizontal integrator) and still air in every group; only the
+# sensor profile differs between flow and gps.
+name: m4_profiles
+description: T4 steps, sensor profile B (flow + rangefinder) vs A (GPS + baro), 60 seeds each
+base: ../t4b_steps_flow.yaml
+workers: 20
+groups:
+  - label: flow
+    set: {run.setup_speedup: 10}
+    sweep:
+      run.seed: {range: [1, 61]}
+  - label: flow_full_1x
+    sweep:
+      run.seed: {range: [1, 61]}
+  - label: gps
+    set: {run.setup_speedup: 10, environment.sensors: gps}
+    sweep:
+      run.seed: {range: [1, 61]}

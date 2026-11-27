@@ -1,0 +1,12 @@
+name: circle
+description: >
+  Track a horizontal circle, radius 1.5 m, 8 s per lap at full speed (1.18 m/s, 0.93 m/s^2 centripetal),
+  2 laps with 3 s speed ramps; the reference gives velocity and acceleration (feedforward).
+task:
+  type: trajectory
+  duration_s: 30.0
+  trajectory: {shape: circle, size_m: 1.5, period_s: 8.0, cycles: 2, start_s: 4.0, ramp_s: 3.0}
+pass:                       # proposal, set before the first flight
+  traj_rms_m: 0.25
+  traj_max_m: 0.5
+  seg0_final_err_m: 0.15

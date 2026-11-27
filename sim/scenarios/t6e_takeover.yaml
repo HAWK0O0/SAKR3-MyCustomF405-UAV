@@ -1,0 +1,12 @@
+name: t6e_takeover
+description: >
+  Takeover (tests/t6e_takeover.py): hover under the PD outer loop; at t = 8 s a pilot on a second
+  MAVLink link switches the FC to BRAKE, a mode the client never commands at that point and that does
+  not land by itself. From then on the client must send nothing: no mode command, no attitude target.
+  The pilot lands at t = 14 s; a LAND before that could only have come from the client.
+
+task:
+  duration_s: 20.0
+  pilot_modes:
+    - {t_s: 8.0, mode: BRAKE}
+    - {t_s: 14.0, mode: LAND}

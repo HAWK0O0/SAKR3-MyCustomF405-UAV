@@ -1,0 +1,11 @@
+# Firmware settings for the external outer loop (GUIDED + SET_ATTITUDE_TARGET).
+# Same file goes onto the real vehicle.
+#
+# SET_ATTITUDE_TARGET.thrust is a normalized collective thrust (0..1, same units as CTUN.ThO),
+# not ArduCopter's default "0.5 = hold altitude" climb-rate interpretation.
+GUID_OPTIONS    8
+# Without a new command for this long the FC levels the attitude target and switches to its
+# own climb-rate-zero altitude hold (mode_guided.cpp, angle_control_run). 3 s is the default.
+GUID_TIMEOUT    3
+# The outer loop commands collective thrust itself; no FC tilt compensation (1/cos(tilt)) on top.
+ATC_ANGLE_BOOST 0

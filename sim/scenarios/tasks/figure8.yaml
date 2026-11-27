@@ -1,0 +1,12 @@
+name: figure8
+description: >
+  Track a horizontal figure 8 (lemniscate of Gerono), half-width 2 m, 12 s per cycle (up to 1.5 m/s,
+  ~2.2 m/s^2), 2 cycles with 3 s speed ramps, with a 0.5 m altitude excursion per cycle.
+task:
+  type: trajectory
+  duration_s: 36.0
+  trajectory: {shape: figure8, size_m: 2.0, period_s: 12.0, cycles: 2, start_s: 4.0, ramp_s: 3.0, vertical_m: 0.5}
+pass:                       # proposal, set before the first flight
+  traj_rms_m: 0.3
+  traj_max_m: 0.6
+  seg0_final_err_m: 0.15

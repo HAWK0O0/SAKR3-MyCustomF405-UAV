@@ -1,0 +1,13 @@
+name: hover_gust
+description: >
+  Hold the handover point for 40 s in 2 m/s mean wind from 45 deg with seeded low-frequency gusts
+  (1 m/s per horizontal component, correlation time 2 s; environment.gusts).
+environment:
+  wind: {speed_ms: 2.0, dir_deg: 45.0}
+  gusts: {sigma_ms: 1.0, tau_s: 2.0, rate_hz: 10.0}
+task:
+  duration_s: 40.0
+pass:                       # proposal, set before the first flight
+  hold_rms_h_m: 0.3
+  hold_rms_v_m: 0.15
+  iae_m_s: 12.0

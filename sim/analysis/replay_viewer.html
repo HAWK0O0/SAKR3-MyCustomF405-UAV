@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>UAV SITL replay</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Replay viewer for runs exported by analysis/replay.py (index.js + data/<run_id>.js next to this file).
+  Self-contained: no internet, no server. Frame: east / north / up relative to the handover point [m];
+  time relative to the start of the outer loop [s].
+-->
+<style>
+.viz-root {
+  color-scheme: light;
+  --surface-0: #f4f3f0; --surface-1: #fcfcfb; --line: #e4e3df; --line-2: #cfcdc6;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #8a8882;
+  --truth: #2a78d6; --ekf: #eb6834; --cmp: #1baf7a; --ref: #52514e;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { font: 13px/1.4 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; background: var(--surface-0); color: var(--text-primary); }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 14px; background: var(--surface-1); border-bottom: 1px solid var(--line); }
+header .title { font-weight: 600; margin-right: 6px; }
+header label { color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+select, button { font: inherit; color: var(--text-primary); background: var(--surface-1); border: 1px solid var(--line-2); border-radius: 6px; padding: 3px 7px; }
+button { cursor: pointer; }
+button.on { background: var(--text-primary); color: var(--surface-1); border-color: var(--text-primary); }
+select#run, select#cmp { max-width: 360px; }
+#layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: minmax(360px, 52vh) auto; gap: 10px; padding: 10px 14px 14px; }
+.panel { background: var(--surface-1); border: 1px solid var(--line); border-radius: 8px; }
+#view { position: relative; overflow: hidden; }
+#c3d { width: 100%; height: 100%; display: block; cursor: grab; }
+#c3d:active { cursor: grabbing; }
+#viewbar { position: absolute; top: 8px; left: 8px; display: flex; gap: 4px; flex-wrap: wrap; }
+#viewbar button { padding: 2px 7px; font-size: 12px; }
+#legend { position: absolute; bottom: 8px; left: 10px; font-size: 12px; color: var(--text-secondary); display: flex; gap: 12px; flex-wrap: wrap; background: rgba(252,252,251,.88); padding: 3px 6px; border-radius: 6px; }
+.sw { display: inline-block; width: 18px; height: 0; border-top: 2.5px solid; vertical-align: middle; margin-right: 4px; }
+.sw.dash { border-top-style: dashed; }
+#readout { position: absolute; top: 8px; right: 10px; font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; color: var(--text-secondary); text-align: right; background: rgba(252,252,251,.88); padding: 4px 7px; border-radius: 6px; white-space: pre; }
+#info { grid-row: 1 / span 2; grid-column: 2; overflow: auto; padding: 12px 14px; max-height: calc(100vh - 70px); position: sticky; top: 10px; }
+#info h2 { font-size: 14px; margin: 0 0 4px; }
+#info h3 { font-size: 12px; margin: 14px 0 4px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .04em; }
+#info .desc { color: var(--text-secondary); margin: 2px 0 6px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; word-break: break-all; }
+.badges { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.badge { border: 1px solid var(--line-2); border-radius: 999px; padding: 1px 9px; font-size: 12px; }
+.badge.no { background: var(--text-primary); color: var(--surface-1); border-color: var(--text-primary); }
+table.kv { border-collapse: collapse; width: 100%; font-size: 12px; }
+table.kv td { padding: 2px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.kv td.v { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.kv tr.over td { font-weight: 600; }
+.ev { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 3px 2px; background: none; font-size: 12px; }
+.ev:hover { background: var(--surface-0); }
+.ev b { font-variant-numeric: tabular-nums; display: inline-block; min-width: 54px; }
+#bottom { grid-column: 1; display: flex; flex-direction: column; gap: 8px; }
+#timeline { display: flex; align-items: center; gap: 10px; padding: 8px 12px; }
+#slider { flex: 1; }
+#tlabel { font: 12px ui-monospace, Consolas, monospace; min-width: 120px; text-align: right; color: var(--text-secondary); }
+#plots { padding: 6px 8px 8px; }
+.plot { position: relative; height: 92px; }
+.plot.last { height: 112px; }
+.plot canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+#tip { position: fixed; pointer-events: none; background: var(--surface-1); border: 1px solid var(--line-2); border-radius: 6px; padding: 5px 8px; font: 12px/1.45 ui-monospace, Consolas, monospace; box-shadow: 0 2px 8px rgba(0,0,0,.08); display: none; z-index: 10; white-space: pre; }
+#msg { padding: 40px; color: var(--text-secondary); }
+</style>
+</head>
+<body class="viz-root">
+<header>
+  <span class="title">SITL replay · <span id="btitle"></span></span>
+  <label>task <select id="fgroup"></select></label>
+  <label>θ <select id="ftheta"></select></label>
+  <label>run <select id="run"></select></label>
+  <label>compare with <select id="cmp"></select></label>
+</header>
+<div id="layout">
+  <section id="view" class="panel">
+    <canvas id="c3d"></canvas>
+    <div id="viewbar">
+      <button data-view="3d" class="on">3D</button><button data-view="top">top</button>
+      <button data-view="south">from south</button><button data-view="east">from east</button>
+      <button id="follow">follow</button>
+      <select id="mscale" title="vehicle drawn larger than life"><option value="1">model ×1</option><option value="2" selected>model ×2</option><option value="4">model ×4</option></select>
+    </div>
+    <div id="readout"></div>
+    <div id="legend"></div>
+  </section>
+  <aside id="info" class="panel"></aside>
+  <div id="bottom">
+    <section id="timeline" class="panel">
+      <button id="play" title="space">play</button>
+      <select id="speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select>
+      <input id="slider" type="range" min="0" max="1000" value="0">
+      <span id="tlabel"></span>
+      <label style="color:var(--text-secondary)"><input id="whole" type="checkbox"> whole flight</label>
+    </section>
+    <section id="plots" class="panel"></section>
+  </div>
+</div>
+<div id="tip"></div>
+<script src="index.js"></script>
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const css = n => getComputedStyle(document.body).getPropertyValue(n).trim();
+const C = {truth: css("--truth"), ekf: css("--ekf"), cmp: css("--cmp"), ref: css("--ref"), ink: css("--text-primary"),
+           ink2: css("--text-secondary"), muted: css("--text-muted"), grid: css("--line"), grid2: css("--line-2"), surf: css("--surface-1")};
+const DPR = window.devicePixelRatio || 1;
+const IDX = window.REPLAY_INDEX;
+const ARM = 0.225, PROP = 0.127;            // SAKR3: centre-to-motor [m], 10 in prop radius [m]
+
+// ------------------------------------------------------------------ data loading
+const cache = {}, waiters = {};
+window.REPLAY_LOADED = d => { prep(d); cache[d.id] = d; (waiters[d.id] || []).forEach(f => f(d)); delete waiters[d.id]; };
+function load(id) {
+  if (cache[id]) return Promise.resolve(cache[id]);
+  return new Promise((res, rej) => {
+    (waiters[id] = waiters[id] || []).push(res);
+    const s = document.createElement("script");
+    s.src = "data/" + encodeURIComponent(id) + ".js";
+    s.onerror = () => rej(new Error("no data file for " + id));
+    document.head.appendChild(s);
+  });
+}
+function prep(d) {                           // derived series used by the plots
+  const L = d.loop;
+  if (L && L.x) {
+    const n = L.t.length;
+    L.eh = new Array(n); L.ev = new Array(n); L.kh = new Array(n); L.tilt = new Array(n); L.ctilt = new Array(n);
+    for (let i = 0; i < n; i++) {
+      L.eh[i] = Math.hypot(L.x[i] - L.sx[i], L.y[i] - L.sy[i]);
+      L.ev[i] = Math.abs(L.z[i] - L.sz[i]);
+      L.kh[i] = Math.hypot(L.ex[i] - L.x[i], L.ey[i] - L.y[i]);
+      L.tilt[i] = tiltDeg(L.roll[i], L.pitch[i]);
+      L.ctilt[i] = tiltDeg(L.croll[i], L.cpitch[i]);
+    }
+  }
+  // EKF over the loop and the landing, for the whole-flight view
+  const A = d.after;
+  d.ekfAll = L ? {t: L.t.concat(A ? A.t : []), x: L.ex.concat(A ? A.ex : []), y: L.ey.concat(A ? A.ey : []), z: L.ez.concat(A ? A.ez : [])} : null;
+}
+const tiltDeg = (r, p) => (r == null || p == null) ? null :
+  Math.acos(Math.max(-1, Math.min(1, Math.cos(r * Math.PI / 180) * Math.cos(p * Math.PI / 180)))) * 180 / Math.PI;
+
+// ------------------------------------------------------------------ interpolation
+function idx(ts, t) { let lo = 0, hi = ts.length - 1; if (t <= ts[0]) return 0; if (t >= ts[hi]) return hi;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (ts[m] <= t) lo = m; else hi = m; } return lo; }
+function at(ts, vs, t, ang) {
+  if (!ts || !vs || !ts.length) return null;
+  const i = idx(ts, t); if (i >= ts.length - 1 || t <= ts[0]) return vs[i];
+  let a = vs[i], b = vs[i + 1]; if (a == null || b == null) return a ?? b;
+  if (ang) { while (b - a > 180) b -= 360; while (a - b > 180) b += 360; }
+  return a + (b - a) * Math.max(0, Math.min(1, (t - ts[i]) / (ts[i + 1] - ts[i])));
+}
+function pose(d, t) {
+  const L = d.loop, F = d.flight;
+  const src = (L && L.x && t >= L.t[0] && t <= L.t[L.t.length - 1]) ? L : (F || (L && L.x ? L : null));
+  if (!src) return null;
+  return {x: at(src.t, src.x, t), y: at(src.t, src.y, t), z: at(src.t, src.z, t),
+          roll: at(src.t, src.roll, t, 1), pitch: at(src.t, src.pitch, t, 1), yaw: at(src.t, src.yaw, t, 1)};
+}
+
+// ------------------------------------------------------------------ state
+const S = {d: null, c: null, t: 0, t0: 0, t1: 1, playing: false, speed: 1, whole: false,
+           cam: {az: 205, el: 28, dist: 9, tx: 0, ty: 0, tz: 0}, view: "3d", follow: false, mscale: 2};
+
+function windowRange() {
+  const d = S.d, L = d.loop, F = d.flight;
+  if (S.whole && F) return [F.t[0], F.t[F.t.length - 1]];
+  if (L && L.t.length) return [L.t[0], L.t[L.t.length - 1]];
+  return F ? [F.t[0], F.t[F.t.length - 1]] : [0, 1];
+}
+
+// ------------------------------------------------------------------ 3D
+const c3 = $("#c3d"), g3 = c3.getContext("2d");
+function fit3d() { const r = c3.getBoundingClientRect(); c3.width = r.width * DPR; c3.height = r.height * DPR; }
+function camBasis() {
+  const k = S.cam, az = k.az * Math.PI / 180, el = k.el * Math.PI / 180;
+  const pos = [k.tx + k.dist * Math.cos(el) * Math.sin(az), k.ty + k.dist * Math.cos(el) * Math.cos(az), k.tz + k.dist * Math.sin(el)];
+  let f = norm([k.tx - pos[0], k.ty - pos[1], k.tz - pos[2]]);
+  let r = norm([f[1], -f[0], 0]); if (!isFinite(r[0])) r = [1, 0, 0];
+  const u = cross(r, f);
+  return {pos, f, r, u, F: (c3.height / 2) / Math.tan(22.5 * Math.PI / 180)};
+}
+const norm = v => { const n = Math.hypot(v[0], v[1], v[2]); return [v[0] / n, v[1] / n, v[2] / n]; };
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+function proj(B, p) {
+  const v = [p[0] - B.pos[0], p[1] - B.pos[1], p[2] - B.pos[2]];
+  const zc = v[0] * B.f[0] + v[1] * B.f[1] + v[2] * B.f[2];
+  if (zc < 0.05) return null;
+  return [c3.width / 2 + (v[0] * B.r[0] + v[1] * B.r[1] + v[2] * B.r[2]) / zc * B.F,
+          c3.height / 2 - (v[0] * B.u[0] + v[1] * B.u[1] + v[2] * B.u[2]) / zc * B.F];
+}
+function line3(B, xs, ys, zs, color, width, dash, alpha, tmax, ts) {
+  g3.save(); g3.strokeStyle = color; g3.lineWidth = width * DPR; g3.globalAlpha = alpha ?? 1;
+  g3.setLineDash(dash ? dash.map(v => v * DPR) : []); g3.lineJoin = "round"; g3.beginPath();
+  let pen = false;
+  for (let i = 0; i < xs.length; i++) {
+    if (tmax != null && ts[i] > tmax) break;
+    const q = (xs[i] == null || ys[i] == null || zs[i] == null) ? null : proj(B, [xs[i], ys[i], zs[i]]);
+    if (!q) { pen = false; continue; }
+    if (pen) g3.lineTo(q[0], q[1]); else { g3.moveTo(q[0], q[1]); pen = true; }
+  }
+  g3.stroke(); g3.restore();
+}
+function seg3(B, a, b, color, width, dash) {
+  const p = proj(B, a), q = proj(B, b); if (!p || !q) return;
+  g3.save(); g3.strokeStyle = color; g3.lineWidth = width * DPR; g3.setLineDash(dash ? dash.map(v => v * DPR) : []);
+  g3.beginPath(); g3.moveTo(p[0], p[1]); g3.lineTo(q[0], q[1]); g3.stroke(); g3.restore();
+}
+function text3(B, p, s, color, align) {
+  const q = proj(B, p); if (!q) return;
+  g3.save(); g3.fillStyle = color; g3.font = `${11 * DPR}px system-ui, sans-serif`; g3.textAlign = align || "left";
+  g3.fillText(s, q[0], q[1]); g3.restore();
+}
+function arrow3(B, from, vec, color, label) {
+  const to = [from[0] + vec[0], from[1] + vec[1], from[2] + vec[2]];
+  seg3(B, from, to, color, 2);
+  const p = proj(B, from), q = proj(B, to); if (!p || !q) return;
+  const a = Math.atan2(q[1] - p[1], q[0] - p[0]), h = 8 * DPR;
+  g3.save(); g3.fillStyle = color; g3.beginPath(); g3.moveTo(q[0], q[1]);
+  g3.lineTo(q[0] - h * Math.cos(a - 0.4), q[1] - h * Math.sin(a - 0.4)); g3.lineTo(q[0] - h * Math.cos(a + 0.4), q[1] - h * Math.sin(a + 0.4));
+  g3.closePath(); g3.fill(); g3.restore();
+  if (label) text3(B, to, " " + label, color);
+}
+// body FRD -> ENU, rotation Rz(yaw) Ry(pitch) Rx(roll) (ArduPilot / MAVLink Euler, NED)
+function b2w(v, P, sc) {
+  const r = P.roll * Math.PI / 180, p = P.pitch * Math.PI / 180, y = P.yaw * Math.PI / 180;
+  let [x0, y0, z0] = [v[0] * sc, v[1] * sc, v[2] * sc];
+  let [x1, y1, z1] = [x0, y0 * Math.cos(r) - z0 * Math.sin(r), y0 * Math.sin(r) + z0 * Math.cos(r)];
+  let [x2, y2, z2] = [x1 * Math.cos(p) + z1 * Math.sin(p), y1, -x1 * Math.sin(p) + z1 * Math.cos(p)];
+  const n = x2 * Math.cos(y) - y2 * Math.sin(y), e = x2 * Math.sin(y) + y2 * Math.cos(y), dn = z2;
+  return [P.x + e, P.y + n, P.z - dn];
+}
+function vehicle(B, P, color, ghost) {
+  const sc = S.mscale, g = S.d.ground_z;
+  if (!ghost) {          // shadow and drop line to the floor
+    seg3(B, [P.x, P.y, P.z], [P.x, P.y, g], C.grid2, 1, [3, 3]);
+    const s = proj(B, [P.x, P.y, g]); if (s) { g3.save(); g3.fillStyle = C.grid2; g3.beginPath(); g3.arc(s[0], s[1], 3 * DPR, 0, 7); g3.fill(); g3.restore(); }
+  }
+  const c = b2w([0, 0, 0], P, sc);
+  for (const ang of [45, 135, 225, 315]) {
+    const a = ang * Math.PI / 180, m = [ARM * Math.cos(a), ARM * Math.sin(a), 0];
+    seg3(B, c, b2w(m, P, sc), ghost ? color : C.ink, ghost ? 1.5 : 2.2);
+    const pts = [];
+    for (let k = 0; k <= 20; k++) { const q = k / 20 * 2 * Math.PI; pts.push(b2w([m[0] + PROP * Math.cos(q), m[1] + PROP * Math.sin(q), -0.02], P, sc)); }
+    const front = ang === 45 || ang === 315;
+    g3.save(); g3.beginPath(); let pen = false;
+    for (const w of pts) { const q = proj(B, w); if (!q) { pen = false; continue; } if (pen) g3.lineTo(q[0], q[1]); else { g3.moveTo(q[0], q[1]); pen = true; } }
+    g3.strokeStyle = ghost ? color : (front ? color : C.ink2); g3.lineWidth = (front ? 2 : 1.3) * DPR;
+    if (front && !ghost) { g3.fillStyle = color; g3.globalAlpha = 0.25; g3.fill(); g3.globalAlpha = 1; }
+    g3.stroke(); g3.restore();
+  }
+  seg3(B, c, b2w([ARM * 1.25, 0, 0], P, sc), color, 2);         // heading tick
+}
+function draw3d() {
+  const d = S.d; if (!d) return;
+  g3.clearRect(0, 0, c3.width, c3.height);
+  const P = pose(d, S.t);
+  if (S.follow && P) { S.cam.tx = P.x; S.cam.ty = P.y; S.cam.tz = P.z; }
+  const B = camBasis(), L = d.loop, F = d.flight, g = d.ground_z;
+  // floor grid, 1 m
+  const e0 = d._ext, ext = [Math.floor(e0[0]) - 2, Math.ceil(e0[1]) + 2, Math.floor(e0[2]) - 2, Math.ceil(e0[3]) + 2];
+  for (let x = ext[0]; x <= ext[1]; x++) seg3(B, [x, ext[2], g], [x, ext[3], g], x === 0 ? C.grid2 : C.grid, 1);
+  for (let y = ext[2]; y <= ext[3]; y++) seg3(B, [ext[0], y, g], [ext[1], y, g], y === 0 ? C.grid2 : C.grid, 1);
+  arrow3(B, [ext[0], ext[2], g], [1, 0, 0], C.ink2, "E"); arrow3(B, [ext[0], ext[2], g], [0, 1, 0], C.ink2, "N");
+  text3(B, [ext[1], ext[2], g], "  1 m grid", C.muted);
+  // handover point
+  seg3(B, [0, 0, g], [0, 0, 0], C.grid2, 1, [2, 4]); text3(B, [0, 0, 0], "  handover", C.muted);
+  if (F) line3(B, F.x, F.y, F.z, C.truth, 1, null, 0.25);                         // whole flight, faint
+  if (L) {
+    line3(B, L.sx, L.sy, L.sz, C.ref, 1.3, [5, 4], 0.9);                               // reference, whole loop
+    line3(B, L.ex, L.ey, L.ez, C.ekf, 1.3, null, 0.95, S.t, L.t);                      // EKF so far
+    if (L.x) line3(B, L.x, L.y, L.z, C.truth, 2.2, null, 1, S.t, L.t);                 // truth so far
+    const r = [at(L.t, L.sx, S.t), at(L.t, L.sy, S.t), at(L.t, L.sz, S.t)];
+    if (S.t >= L.t[0] && S.t <= L.t[L.t.length - 1]) { const q = proj(B, r); if (q) { g3.save(); g3.strokeStyle = C.ref; g3.lineWidth = 1.5 * DPR; g3.beginPath(); g3.arc(q[0], q[1], 6 * DPR, 0, 7); g3.stroke(); g3.restore(); } }
+  }
+  if (S.c) {
+    const cL = S.c.loop;
+    if (cL && cL.x) line3(B, cL.x, cL.y, cL.z, C.cmp, 1.8, null, 1, S.t, cL.t);
+    const cp = pose(S.c, S.t); if (cp) vehicle(B, cp, C.cmp, true);
+  }
+  if (P) {
+    vehicle(B, P, C.truth, false);
+    // wind (air velocity) at the vehicle
+    const G = d.gusts, w = d.meta.wind;
+    let wx = null, wy = null;
+    if (G && S.t >= G.t[0]) { wx = at(G.t, G.wx, S.t); wy = at(G.t, G.wy, S.t); }
+    else if (w && w.speed_ms > 0) { const a = w.dir_deg * Math.PI / 180; wx = -w.speed_ms * Math.sin(a); wy = -w.speed_ms * Math.cos(a); }
+    if (wx != null && Math.hypot(wx, wy) > 0.05) arrow3(B, [P.x, P.y, P.z + 0.9], [wx * 0.5, wy * 0.5, 0], C.ink2, `wind ${Math.hypot(wx, wy).toFixed(1)} m/s`);
+    for (const e of d.events) if (e.kind === "push" && S.t >= e.t && S.t <= e.t + Math.max(e.ms / 1000, 0.6)) {
+      const n = Math.hypot(...e.vec) || 1; arrow3(B, [P.x - e.vec[0] / n * 1.2, P.y - e.vec[1] / n * 1.2, P.z - e.vec[2] / n * 1.2], e.vec.map(v => v / n * 1.0), C.ink, "push");
+    }
+  }
+  readout(P);
+}
+function readout(P) {
+  const d = S.d, L = d.loop; let s = `t ${S.t >= 0 ? " " : ""}${S.t.toFixed(2)} s`;
+  if (P) s += `\nE ${P.x.toFixed(2)}  N ${P.y.toFixed(2)}  up ${P.z.toFixed(2)} m`;
+  if (L && L.x && S.t >= L.t[0] && S.t <= L.t[L.t.length - 1]) {
+    s += `\nerror h ${at(L.t, L.eh, S.t).toFixed(3)}  v ${at(L.t, L.ev, S.t).toFixed(3)} m`;
+    s += `\ntilt ${at(L.t, L.tilt, S.t).toFixed(1)}°  thrust ${at(L.t, L.thrust, S.t).toFixed(3)}`;
+  }
+  const m = (d.modes || []).filter(x => x.t <= S.t).pop(); if (m) s += `\nmode ${m.mode}`;
+  $("#readout").textContent = s;
+}
+function extents(d) {
+  const xs = [], ys = [];
+  for (const s of [d.loop, d.flight]) if (s && s.x) { xs.push(...s.x.filter(v => v != null)); ys.push(...s.y.filter(v => v != null)); }
+  if (d.loop) { xs.push(...d.loop.sx); ys.push(...d.loop.sy); }
+  const pad = 1;
+  return [Math.min(-1, ...xs) - pad, Math.max(1, ...xs) + pad, Math.min(-1, ...ys) - pad, Math.max(1, ...ys) + pad];
+}
+function setView(v) {
+  S.view = v; document.querySelectorAll("#viewbar button[data-view]").forEach(b => b.classList.toggle("on", b.dataset.view === v));
+  const e = S.d._ext, cx = (e[0] + e[1]) / 2, cy = (e[2] + e[3]) / 2, size = Math.max(e[1] - e[0], e[3] - e[2], 4);
+  const L = S.d.loop, zc = L ? (Math.max(...L.sz) + Math.min(...L.sz)) / 2 : 0;
+  Object.assign(S.cam, {tx: cx, ty: cy, tz: zc, dist: size * 1.2});
+  if (v === "3d") Object.assign(S.cam, {az: 205, el: 28});
+  if (v === "top") Object.assign(S.cam, {az: 180, el: 89.5});
+  if (v === "south") Object.assign(S.cam, {az: 180, el: 0.5});
+  if (v === "east") Object.assign(S.cam, {az: 90, el: 0.5});
+  draw3d();
+}
+let drag = null;
+c3.addEventListener("pointerdown", e => { drag = {x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey}; c3.setPointerCapture(e.pointerId); });
+c3.addEventListener("pointermove", e => {
+  if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.pan) { const B = camBasis(), k = S.cam.dist / 600; for (let i = 0; i < 3; i++) { const v = -dx * k * B.r[i] + dy * k * B.u[i]; if (i === 0) S.cam.tx += v; if (i === 1) S.cam.ty += v; if (i === 2) S.cam.tz += v; } }
+  else { S.cam.az = (S.cam.az + dx * 0.4) % 360; S.cam.el = Math.max(-5, Math.min(89.5, S.cam.el + dy * 0.3)); }
+  document.querySelectorAll("#viewbar button[data-view]").forEach(b => b.classList.remove("on")); draw3d();
+});
+c3.addEventListener("pointerup", () => drag = null);
+c3.addEventListener("contextmenu", e => e.preventDefault());
+c3.addEventListener("wheel", e => { e.preventDefault(); S.cam.dist = Math.max(1, Math.min(200, S.cam.dist * Math.exp(e.deltaY * 0.001))); draw3d(); }, {passive: false});
+c3.addEventListener("dblclick", () => setView("3d"));
+
+// ------------------------------------------------------------------ plots
+// Each plot: one quantity, one axis. Series colours keep their meaning everywhere:
+// blue = true state, grey dashed = reference / command, orange = EKF estimate, aqua = comparison run.
+const PLOTS = [
+  {key: "e", title: "east [m]", series: [["truth", "x"], ["ref", "sx"], ["ekf", "ex"]]},
+  {key: "n", title: "north [m]", series: [["truth", "y"], ["ref", "sy"], ["ekf", "ey"]]},
+  {key: "u", title: "up [m]", series: [["truth", "z"], ["ref", "sz"], ["ekf", "ez"]]},
+  {key: "err", title: "error to reference: horizontal [m]", series: [["truth", "eh"]], band: true},
+  {key: "errv", title: "error to reference: vertical [m]", series: [["truth", "ev"]], band: true},
+  {key: "est", title: "EKF − true, horizontal [m]", series: [["ekf", "kh"]]},
+  {key: "tilt", title: "tilt [°]: true, commanded", series: [["truth", "tilt"], ["ref", "ctilt"]]},
+  {key: "thr", title: "collective thrust command", series: [["ref", "thrust"]]},
+];
+const STY = {truth: {c: "truth", w: 1.6}, ref: {c: "ref", w: 1.2, dash: [4, 3]}, ekf: {c: "ekf", w: 1.2}, cmp: {c: "cmp", w: 1.5}};
+const plotEls = [];
+function buildPlots() {
+  const box = $("#plots"); box.innerHTML = "";
+  PLOTS.forEach((p, i) => {
+    const div = document.createElement("div"); div.className = "plot" + (i === PLOTS.length - 1 ? " last" : "");
+    const base = document.createElement("canvas"), over = document.createElement("canvas");
+    div.append(base, over); box.append(div);
+    plotEls.push({p, div, base, over});
+    over.addEventListener("mousemove", e => hover(e, i)); over.addEventListener("mouseleave", () => { $("#tip").style.display = "none"; drawCursors(); });
+    over.addEventListener("click", e => { seek(xToT(e, over)); });
+  });
+}
+const PADL = 52, PADR = 10, PADT = 16;
+function xToT(e, cv) { const r = cv.getBoundingClientRect(); const f = (e.clientX - r.left - PADL) / (r.width - PADL - PADR); return S.t0 + Math.max(0, Math.min(1, f)) * (S.t1 - S.t0); }
+function seriesData(d, key, isCmp) {
+  // whole-flight view: true position from the .BIN truth (25 Hz) and EKF incl. landing; else the loop (50 Hz)
+  const L = d.loop;
+  if (S.whole && d.flight && ["x", "y", "z"].includes(key)) return [d.flight.t, d.flight[key]];
+  if (S.whole && d.ekfAll && ["ex", "ey", "ez"].includes(key)) return [d.ekfAll.t, d.ekfAll[key.slice(1)]];
+  return L && L[key] ? [L.t, L[key]] : null;
+}
+function drawPlots() {
+  const d = S.d; if (!d) return;
+  plotEls.forEach(({p, div, base, over}, i) => {
+    const r = div.getBoundingClientRect();
+    for (const cv of [base, over]) { cv.width = r.width * DPR; cv.height = r.height * DPR; }
+    const g = base.getContext("2d"); g.scale(DPR, DPR);
+    const W = r.width, H = r.height, bottom = (i === PLOTS.length - 1) ? 22 : 6, ph = H - PADT - bottom, pw = W - PADL - PADR;
+    const series = p.series.map(([sty, key]) => ({sty, key, xy: seriesData(d, key)})).filter(s => s.xy);
+    if (S.c) for (const [sty, key] of p.series) if (sty === "truth") { const xy = seriesData(S.c, key, true); if (xy) series.push({sty: "cmp", key, xy}); }
+    // y range over the visible window
+    let lo = Infinity, hi = -Infinity;
+    for (const s of series) { const [ts, vs] = s.xy; for (let k = 0; k < ts.length; k++) if (ts[k] >= S.t0 && ts[k] <= S.t1 && vs[k] != null) { lo = Math.min(lo, vs[k]); hi = Math.max(hi, vs[k]); } }
+    if (p.band) { lo = 0; hi = Math.max(hi, d.meta.band_m * 1.5); }
+    if (!isFinite(lo)) { lo = 0; hi = 1; }
+    if (hi - lo < 0.05) { const m = (hi + lo) / 2; lo = m - 0.025; hi = m + 0.025; }
+    const padY = (hi - lo) * 0.08; lo -= p.band ? 0 : padY; hi += padY;
+    const X = t => PADL + (t - S.t0) / (S.t1 - S.t0) * pw, Y = v => PADT + (1 - (v - lo) / (hi - lo)) * ph;
+    p._map = {X, Y, lo, hi, series};
+    g.fillStyle = C.ink2; g.font = "11px system-ui, sans-serif"; g.textAlign = "left"; g.fillText(p.title, PADL, 11);
+    // y grid + labels
+    const ticks = niceTicks(lo, hi, 3);
+    g.textAlign = "right"; g.fillStyle = C.muted;
+    for (const v of ticks) { g.strokeStyle = C.grid; g.lineWidth = 1; g.beginPath(); g.moveTo(PADL, Y(v)); g.lineTo(W - PADR, Y(v)); g.stroke(); g.fillText(fmt(v), PADL - 5, Y(v) + 4); }
+    // x ticks on the last plot
+    if (i === PLOTS.length - 1) {
+      g.textAlign = "center";
+      for (const v of niceTicks(S.t0, S.t1, 8)) { g.fillText(fmt(v), X(v), H - 6); g.strokeStyle = C.grid; g.beginPath(); g.moveTo(X(v), PADT + ph); g.lineTo(X(v), PADT + ph + 4); g.stroke(); }
+      g.textAlign = "right"; g.fillText("t [s]", W - PADR, H - 6);
+    }
+    // events
+    for (const e of evList()) { if (e.t < S.t0 || e.t > S.t1) continue; g.strokeStyle = e.kind === "trip" ? C.ink : C.grid2; g.setLineDash(e.kind === "mode" ? [2, 3] : []); g.lineWidth = e.kind === "trip" ? 1.5 : 1; g.beginPath(); g.moveTo(X(e.t), PADT); g.lineTo(X(e.t), PADT + ph); g.stroke(); g.setLineDash([]); }
+    if (p.band) { g.strokeStyle = C.ink2; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(PADL, Y(d.meta.band_m)); g.lineTo(W - PADR, Y(d.meta.band_m)); g.stroke(); g.setLineDash([]); g.textAlign = "left"; g.fillStyle = C.muted; g.fillText(`band ${d.meta.band_m} m`, W - PADR - 70, Y(d.meta.band_m) - 3); }
+    // series (comparison first, so the run itself stays on top)
+    for (const s of [...series].sort((a, b) => (b.sty === "cmp") - (a.sty === "cmp"))) {
+      const st = STY[s.sty], [ts, vs] = s.xy;
+      g.strokeStyle = C[st.c]; g.lineWidth = st.w; g.setLineDash(st.dash || []); g.lineJoin = "round"; g.beginPath(); let pen = false;
+      for (let k = 0; k < ts.length; k++) { if (ts[k] < S.t0 - 0.1 || ts[k] > S.t1 + 0.1 || vs[k] == null) { pen = false; continue; } const x = X(ts[k]), y = Y(vs[k]); if (pen) g.lineTo(x, y); else { g.moveTo(x, y); pen = true; } }
+      g.stroke(); g.setLineDash([]);
+    }
+  });
+  drawCursors();
+}
+function niceTicks(lo, hi, n) {
+  const span = hi - lo, step0 = span / n, mag = Math.pow(10, Math.floor(Math.log10(step0))), f = step0 / mag;
+  const step = (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(Math.abs(v) < step * 1e-6 ? 0 : v);
+  return out;
+}
+const fmt = v => Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 10 ? v.toFixed(1) : Math.abs(v) >= 1 ? v.toFixed(1) : v.toFixed(2);
+function drawCursors(hoverT) {
+  plotEls.forEach(({p, div, over}) => {
+    const g = over.getContext("2d"); g.setTransform(DPR, 0, 0, DPR, 0, 0); g.clearRect(0, 0, over.width, over.height);
+    if (!p._map) return; const {X} = p._map, H = div.getBoundingClientRect().height;
+    g.strokeStyle = C.ink; g.lineWidth = 1.2; g.beginPath(); g.moveTo(X(S.t), PADT - 2); g.lineTo(X(S.t), H - 4); g.stroke();
+    if (hoverT != null) { g.strokeStyle = C.ink2; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(X(hoverT), PADT - 2); g.lineTo(X(hoverT), H - 4); g.stroke(); g.setLineDash([]); }
+  });
+}
+function hover(e, i) {
+  const t = xToT(e, plotEls[i].over); drawCursors(t);
+  const p = PLOTS[i], names = {truth: "true", ref: p.key === "thr" ? "command" : (p.key === "tilt" ? "commanded" : "reference"), ekf: "EKF", cmp: "comparison"};
+  let s = `t ${t.toFixed(2)} s`;
+  for (const sr of p._map.series) { const v = at(sr.xy[0], sr.xy[1], t); if (v != null) s += `\n${names[sr.sty].padEnd(10)} ${v.toFixed(3)}`; }
+  const ev = evList().filter(x => Math.abs(x.t - t) < (S.t1 - S.t0) / 150); for (const x of ev) s += `\n${x.label}`;
+  const tip = $("#tip"); tip.textContent = s; tip.style.display = "block";
+  tip.style.left = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8) + "px"; tip.style.top = (e.clientY + 12) + "px";
+}
+function evList() {
+  const d = S.d;
+  return d.events.concat(S.whole ? (d.modes || []).map(m => ({t: m.t, kind: "mode", label: "mode " + m.mode})) : [])
+    .sort((a, b) => a.t - b.t);
+}
+
+// ------------------------------------------------------------------ info panel
+function globRe(p) { return new RegExp("^" + p.replace(/[.+^${}()|\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".") + "$"); }
+function info() {
+  const d = S.d, m = d.meta, esc = s => String(s ?? "").replace(/[&<>]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c]));
+  const yes = (ok, y, n) => `<span class="badge${ok ? "" : " no"}">${ok ? "✓ " + y : "✗ " + n}</span>`;
+  const bounds = Object.entries(m.pass_bounds || {});
+  const boundFor = k => { for (const [pat, ub] of bounds) if (globRe(pat).test(k)) return ub; return null; };
+  const keys = [...new Set([...d.key_metrics, ...Object.keys(d.metrics).filter(k => boundFor(k) != null)])];
+  let rows = "";
+  for (const k of keys) { const v = d.metrics[k], ub = boundFor(k), over = ub != null && (v == null || v > ub);
+    rows += `<tr class="${over ? "over" : ""}"><td>${esc(k)}</td><td class="v">${v == null ? "—" : (+v).toPrecision(3)}</td><td class="v">${ub == null ? "" : (over ? "over " : "≤ ") + ub}</td></tr>`; }
+  const evs = evList().map(e => `<button class="ev" data-t="${e.t}"><b>${e.t.toFixed(2)} s</b> ${esc(e.label)}</button>`).join("");
+  const law = m.law + (m.law_args && Object.keys(m.law_args).length ? " " + JSON.stringify(m.law_args) : "");
+  $("#info").innerHTML = `
+    <h2>${esc(m.name)}</h2><div class="desc">${esc(m.description)}</div>
+    <div class="mono">${esc(d.id)}</div>
+    <div class="badges">${yes(m.completed, "completed", m.outcome + (m.reason ? ": " + m.reason : ""))}${yes(m.pass, "task bounds met", "task bounds not met")}${yes(m.landed, "landed", "landing not confirmed")}</div>
+    <table class="kv">
+      <tr><td>θ</td><td class="v">${m.mass_kg} kg, thrust × ${m.derate}</td></tr>
+      <tr><td>sensors</td><td class="v">${m.sensors === "flow" ? "B: flow + rangefinder" : "A: GPS + baro"}</td></tr>
+      <tr><td>wind</td><td class="v">${m.wind.speed_ms} m/s from ${m.wind.dir_deg}°${m.gusts && m.gusts.sigma_ms > 0 ? `, gusts σ ${m.gusts.sigma_ms} m/s` : ""}</td></tr>
+      <tr><td>law</td><td class="v mono" style="white-space:normal">${esc(law)}</td></tr>
+      <tr><td>hover thrust given</td><td class="v">${m.hover_thrust == null ? "—" : (+m.hover_thrust).toFixed(3)}</td></tr>
+      <tr><td>seed, loop speedup</td><td class="v">${m.seed}, ×${m.speedup}</td></tr>
+    </table>
+    ${m.pass_fails ? `<h3>bounds not met</h3><div class="mono" style="white-space:normal">${esc(m.pass_fails)}</div>` : ""}
+    <h3>events (click to jump)</h3>${evs || '<div class="desc">none</div>'}
+    <h3>metrics (true position)</h3><table class="kv">${rows}</table>`;
+  document.querySelectorAll(".ev").forEach(b => b.onclick = () => seek(+b.dataset.t - 1));
+}
+function legend() {
+  const sw = (c, lab, dash) => `<span><span class="sw${dash ? " dash" : ""}" style="border-color:${c}"></span>${lab}</span>`;
+  $("#legend").innerHTML = sw(C.truth, "true path") + sw(C.ref, "reference", 1) + sw(C.ekf, "EKF estimate") +
+    (S.c ? sw(C.cmp, "comparison: " + S.c.id) : "") + `<span>drag: rotate · shift-drag: pan · wheel: zoom · space: play</span>`;
+}
+
+// ------------------------------------------------------------------ time
+function seek(t) { S.t = Math.max(S.t0, Math.min(S.t1, t)); $("#slider").value = Math.round((S.t - S.t0) / (S.t1 - S.t0) * 1000); tick(); }
+function tick() { $("#tlabel").textContent = `${S.t.toFixed(2)} / ${S.t1.toFixed(1)} s`; draw3d(); drawCursors(); }
+let last = null;
+function frame(ts) {
+  if (S.playing) {
+    if (last != null) { S.t += (ts - last) / 1000 * S.speed; if (S.t >= S.t1) { S.t = S.t1; S.playing = false; $("#play").textContent = "play"; } }
+    last = ts; $("#slider").value = Math.round((S.t - S.t0) / (S.t1 - S.t0) * 1000); tick();
+  } else last = null;
+  requestAnimationFrame(frame);
+}
+$("#play").onclick = () => { if (S.t >= S.t1) S.t = S.t0; S.playing = !S.playing; $("#play").textContent = S.playing ? "pause" : "play"; };
+$("#speed").onchange = e => S.speed = +e.target.value;
+$("#slider").oninput = e => { S.t = S.t0 + e.target.value / 1000 * (S.t1 - S.t0); tick(); };
+$("#whole").onchange = e => { S.whole = e.target.checked; [S.t0, S.t1] = windowRange(); seek(S.t); drawPlots(); info(); };
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "SELECT") return;
+  if (e.code === "Space") { e.preventDefault(); $("#play").click(); }
+  if (e.code === "ArrowRight") seek(S.t + (e.shiftKey ? 1 : 0.1));
+  if (e.code === "ArrowLeft") seek(S.t - (e.shiftKey ? 1 : 0.1));
+});
+document.querySelectorAll("#viewbar button[data-view]").forEach(b => b.onclick = () => setView(b.dataset.view));
+$("#follow").onclick = e => { S.follow = !S.follow; e.target.classList.toggle("on", S.follow); if (!S.follow) setView(S.view); else draw3d(); };
+$("#mscale").onchange = e => { S.mscale = +e.target.value; draw3d(); };
+
+// ------------------------------------------------------------------ run picker
+const thetaOf = r => `${r.mass_kg} kg / ${r.derate}`;
+const verdictOf = r => r.outcome !== "ok" ? r.outcome : (r.pass ? "pass" : "bounds not met");
+const lawOf = r => r.law + (r.law_args && r.law_args.feedforward === false ? " (no ff)" : "");
+function fillPickers() {
+  const runs = IDX.runs, groups = [...new Set(runs.map(r => r.group))], thetas = [...new Set(runs.map(thetaOf))].sort();
+  $("#fgroup").innerHTML = `<option value="">all</option>` + groups.map(g => `<option>${g}</option>`).join("");
+  $("#ftheta").innerHTML = `<option value="">all</option>` + thetas.map(t => `<option>${t}</option>`).join("");
+  refillRuns();
+}
+function refillRuns() {
+  const g = $("#fgroup").value, th = $("#ftheta").value;
+  const runs = IDX.runs.filter(r => (!g || r.group === g) && (!th || thetaOf(r) === th));
+  const label = r => `${r.group} · ${thetaOf(r)} · s${r.seed}${r.sensors === "flow" ? " · B" : ""} · ${verdictOf(r)}`;
+  const opts = runs.map(r => `<option value="${r.id}">${label(r)}</option>`).join("");
+  const cur = S.d ? S.d.id : null;
+  $("#run").innerHTML = opts; $("#cmp").innerHTML = `<option value="">none</option>` + IDX.runs.filter(r => !g || r.group === g).map(r => `<option value="${r.id}">${label(r)}</option>`).join("");
+  if (cur && runs.some(r => r.id === cur)) $("#run").value = cur;
+  if (S.c) $("#cmp").value = S.c.id;
+}
+$("#fgroup").onchange = () => { refillRuns(); if ($("#run").value) openRun($("#run").value, S.c && S.c.id); };
+$("#ftheta").onchange = () => { refillRuns(); if ($("#run").value) openRun($("#run").value, S.c && S.c.id); };
+$("#run").onchange = e => openRun(e.target.value, S.c && S.c.id);
+$("#cmp").onchange = e => openRun(S.d.id, e.target.value || null);
+
+async function openRun(id, cmpId) {
+  try {
+    const d = await load(id), c = cmpId ? await load(cmpId) : null;
+    const keepT = S.d ? S.t : null, sameTask = S.d && S.d.meta.name === d.meta.name;
+    S.d = d; S.c = c; d._ext = extents(d);
+    if (c) { const e2 = extents(c); d._ext = [Math.min(d._ext[0], e2[0]), Math.max(d._ext[1], e2[1]), Math.min(d._ext[2], e2[2]), Math.max(d._ext[3], e2[3])]; }
+    [S.t0, S.t1] = windowRange();
+    location.hash = "run=" + encodeURIComponent(id) + (cmpId ? "&cmp=" + encodeURIComponent(cmpId) : "");
+    $("#run").value = id; $("#cmp").value = cmpId || "";
+    info(); legend(); setView(S.view); drawPlots();
+    seek(sameTask && keepT != null ? keepT : S.t0);
+  } catch (err) { $("#info").innerHTML = `<div id="msg">${err.message}. Export it with analysis/replay.py.</div>`; }
+}
+
+// ------------------------------------------------------------------ start
+if (!IDX || !IDX.runs || !IDX.runs.length) {
+  document.body.innerHTML = '<div id="msg">No index.js next to this page. Export runs with <code>python analysis/replay.py results/&lt;batch&gt;</code> and open the index.html it writes.</div>';
+} else {
+  $("#btitle").textContent = IDX.title + ` (${IDX.runs.length} runs)`;
+  buildPlots(); fillPickers();
+  const h = new URLSearchParams(location.hash.slice(1));
+  fit3d();
+  openRun(h.get("run") || IDX.runs[0].id, h.get("cmp"));
+  addEventListener("resize", () => { fit3d(); draw3d(); drawPlots(); });
+  addEventListener("hashchange", () => {            // a pasted / edited link: open what it names
+    const q = new URLSearchParams(location.hash.slice(1)), r = q.get("run");
+    if (r && (!S.d || r !== S.d.id || (q.get("cmp") || null) !== (S.c ? S.c.id : null))) openRun(r, q.get("cmp"));
+  });
+  requestAnimationFrame(frame);
+}
+</script>
+</body>
+</html>
