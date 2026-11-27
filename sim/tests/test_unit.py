@@ -16,6 +16,7 @@ from types import SimpleNamespace
 SIM = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SIM))
 
+import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from analysis.batch_table import early_runs, summarize, to_markdown  # noqa: E402
@@ -164,9 +165,36 @@ def test_takeover_stops_the_loop_and_commands_no_mode():
 
 
 def test_guided_heartbeat_does_not_stop_the_loop():
-    link = FakeLink(_samples(5) + [_fc_heartbeat(4)] + [_pos(1100 + 20 * i) for i in range(3)] + [_pos(99000)])
-    res = _loop(link, ScriptedLaw(-1, None)).run(60.0)
+    link = FakeLink(_samples(5) + [_fc_heartbeat(4)] + [_pos(1100 + 20 * i) for i in range(4)])
+    res = _loop(link, ScriptedLaw(-1, None)).run(0.15)
     assert res.trip is None and res.end_reason == "duration" and len(res.rows) == 8
+
+
+def test_state_gap_past_the_end_trips_and_is_not_a_completion():
+    # samples at 0, 0.02, 0.04, then 1.5 s: the gap runs past the 1 s duration
+    link = FakeLink([_att(1000), _pos(1000), _pos(1020), _pos(1040), _pos(2500)])
+    res = _loop(link, ScriptedLaw(-1, None)).run(1.0)
+    assert res.trip.startswith("state gap") and res.end_reason == "" and len(res.rows) == 3
+    assert link.kinds("mode") == [("mode", 17)]                                  # fallback BRAKE
+
+
+def test_non_numeric_command_reaches_the_fallback():
+    for bad in (Command(0, 0, 0, "invalid"), Command(None, 0.0, 0.0, 0.5), Command(0.0, [0.1], 0.0, 0.5)):
+        link = FakeLink(_samples(10))
+        res = _loop(link, ScriptedLaw(4, bad)).run(60.0)
+        assert res.trip.startswith("controller fault") and len(res.rows) == 4, res.trip
+        assert not res.rows[-1]["sent"] and math.isnan(res.rows[-1]["cmd_thrust"])
+        assert len(link.kinds("attitude_target")) == 3 and link.kinds("mode") == [("mode", 17)]
+
+
+def test_numpy_scalar_command_is_not_a_fault():
+    for cast in (np.float32, np.float64, np.int64):
+        cmd = Command(cast(0), cast(0), cast(0), cast(1))
+        assert Supervisor.command_fault(cmd) is None, cast
+    link = FakeLink(_samples(6) + [_pos(1120)])
+    f = np.float32
+    res = _loop(link, ScriptedLaw(3, Command(f(0.01), f(0.0), f(0.0), f(0.5)))).run(0.1)
+    assert res.trip is None and res.end_reason == "duration" and all(r["sent"] for r in res.rows)
 
 
 def test_fc_took_over_after_the_fallback():

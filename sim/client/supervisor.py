@@ -26,6 +26,7 @@ The FC-side protections stay active underneath (GUID_TIMEOUT, ANGLE_MAX, failsaf
 from __future__ import annotations
 
 import math
+import numbers
 from dataclasses import dataclass
 
 from .controller import Command, State
@@ -80,7 +81,7 @@ class Supervisor:
         """Reason if the command must not be sent at all (a non-finite field), else None."""
         bad = [f"{k}={v}" for k, v in (("roll", cmd.roll), ("pitch", cmd.pitch), ("yaw", cmd.yaw),
                                        ("thrust", cmd.thrust))
-               if not isinstance(v, (int, float)) or not math.isfinite(v)]
+               if not isinstance(v, numbers.Real) or not math.isfinite(v)]   # Real: numpy scalars too
         return f"controller fault: non-finite command ({', '.join(bad)})" if bad else None
 
     def clamp(self, cmd: Command) -> tuple[Command, bool]:
