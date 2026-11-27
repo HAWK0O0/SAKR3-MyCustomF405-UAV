@@ -1,0 +1,52 @@
+# Sensor profile B: optical flow + rangefinder, no GPS (indoor). Loaded after outer_loop.parm, before
+# the scenario's own params. Real sensor: MicoAir MTF-01P (flow + ToF lidar in one module).
+#
+# Real vehicle vs SITL:
+#   real : FLOW_TYPE 5 / RNGFND1_TYPE 10 (MAVLink, module in mav_apm mode on a 115200 UART; which UART
+#          is still open). AP_OpticalFlow_MAV averages the OPTICAL_FLOW messages received since its last
+#          200 Hz update; the rangefinder is read at 20 Hz by Copter.
+#   SITL : FLOW_TYPE 10 / RNGFND1_TYPE 100 (simulated sensors from the true state). The EKF takes at most
+#          one flow sample per 50 ms either way.
+# Datasheet (retailer listings, no MicoAir datasheet found): 100 Hz output, 42 deg flow FOV, max 7 m/s at
+# 1 m height, lidar 12 m (another MicoAir page says 10 m), accuracy 2 cm at 0.1-2 m and 2 % beyond.
+# Noise, delay, minimum range and ground clearance below are estimates, to be replaced in M5.
+
+# --- no GPS: the module is treated as absent (indoors the NEO-7M would have no usable fix)
+GPS1_TYPE 0
+SIM_GPS1_ENABLE 0
+
+# --- optical flow
+FLOW_TYPE 10
+SIM_FLOW_ENABLE 1
+SIM_FLOW_RATE 100        # Hz, datasheet output rate
+SIM_FLOW_DELAY 2         # samples (the code uses it as a sample count, not ms): 2 x 10 ms. Estimate
+EK3_FLOW_DELAY 20        # ms, EKF's assumed flow delay, matched to the simulated one
+SIM_FLOW_RND 0.05        # rad/s, uniform amplitude (SITL default). Estimate: 0.25 m/s at 5 m height
+
+# --- rangefinder (downward)
+RNGFND1_TYPE 100
+RNGFND1_ORIENT 25
+RNGFND1_MIN 0.01         # m. Must stay below the landed reading: EKF3 only takes "Good" samples, and
+                         # without range data on the ground it has no flow ground offset, so no relative
+                         # position and no arming in GUIDED ("Need Position Estimate"). Estimate
+RNGFND1_MAX 8.0          # m, kept under the 10-12 m figure (forum reports say it is optimistic)
+# SITL's vehicle rests with its body origin on the ground, so a sensor at the origin reads 0 when landed
+# and noise drops it out of range. The module is placed 5 cm above the origin instead (z is down), which
+# gives a 5 cm landed reading, the order of a sensor under the frame.
+SIM_SONAR_POS_Z -0.05
+SIM_FLOW_POS_Z -0.05
+FLOW_POS_Z -0.05
+RNGFND1_GNDCLR 0.05      # m, landed reading (4.7 name; RNGFND1_GNDCLEAR is gone and would be ignored,
+                         # leaving the 0.10 default and a 5 cm EKF height bias). Real value: from the real log
+SIM_SONAR_RND 0.02       # m, uniform amplitude (sigma 1.2 cm), the 2 cm datasheet figure; does not grow
+                         # with range as the 2 % beyond 2 m would. Estimate
+
+# --- baro: same part as profile A, still fused as the EKF's height fallback
+SIM_BARO_RND 0.1
+
+# --- EKF3 sources: horizontal velocity from flow, height from the rangefinder, yaw from the compass
+EK3_SRC1_POSXY 0
+EK3_SRC1_VELXY 5
+EK3_SRC1_POSZ 2
+EK3_SRC1_VELZ 0
+EK3_SRC1_YAW 1

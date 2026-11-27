@@ -1,0 +1,11 @@
+# Sensor profile A: GPS + baro (outdoor). Loaded after outer_loop.parm, before the scenario's own params.
+# Profile B (optical flow + rangefinder, no GPS) is params/sensors_flow.parm.
+#
+# SITL noise models (Copter-4.7.3), all drawn from random(), i.e. set by the run seed:
+#   IMU   : always-on floor (accel +-0.01 m/s^2, gyro +-0.04 deg/s, uniform); SIM_ACC1_RND /
+#           SIM_GYR1_RND add motor vibration on top, left at 0 until the real vibration level is known
+#   baro  : SIM_BARO_RND = amplitude of uniform noise [m] (copter.parm sets 0)
+#   GPS   : SITL has no horizontal GPS noise model (SIM_GPS1_NOISE is only a slow altitude sine);
+#           5 Hz, 100 ms lag (SIM_GPS1_HZ / SIM_GPS1_LAG_MS defaults)
+# Values below are estimates for the GY-91 (BMP280) under prop wash, to be replaced in M5.
+SIM_BARO_RND 0.1

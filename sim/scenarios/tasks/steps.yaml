@@ -1,0 +1,16 @@
+name: steps
+description: >
+  The T4 step sequence (hold 8 s, altitude +1 m, back, 2 m north, back) in still air, with the
+  scenario default law settings (PD with horizontal integrator).
+task:
+  duration_s: 56.0
+  steps:
+    - [0.0, 0.0, 0.0, 0.0]
+    - [8.0, 0.0, 0.0, -1.0]
+    - [20.0, 0.0, 0.0, 0.0]
+    - [32.0, 2.0, 0.0, 0.0]
+    - [44.0, 0.0, 0.0, 0.0]
+pass:                       # proposal, set before the first flight
+  "seg*_overshoot_pct": 30
+  "seg*_rise_s": 4
+  "seg[1-4]_final_err_m": 0.15

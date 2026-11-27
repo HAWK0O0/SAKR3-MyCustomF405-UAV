@@ -1,0 +1,27 @@
+# T5: noise floor and speedup consistency (analysed by tests/t5_repeatability.py).
+#
+# History, kept in results/: m3_t5_pilot paired 5 seeds across speedups, assuming a seed fixes the
+# whole flight. It does not: SITL's single random() stream is consumed by the turbulence from takeoff
+# on, and takeoff happens at a MAVLink-timed, slightly different simulated moment in every run.
+# m3_t5_n20 compared unpaired groups of 20: still too few, the equivalence bound fails ~24 % of metrics
+# even with no bias at all. 60 runs per variant bring that to ~0.05 % and detect biases >= ~0.65 sigma.
+name: m3_t5
+description: >
+  same_seed: seed 1 five times (loop at 1x): spread that remains with the seed fixed.
+  seeds    : seeds 1-60 at each loop speedup; at 1x they are the reference and give the noise floor.
+  full_1x  : seeds 1-60 with boot/takeoff/landing at 1x as well, to check that fast-forwarding the
+             phases flown by the FC's own controllers (setup_speedup 10) changes nothing.
+base: ../t5_steps_wind.yaml
+workers: 20
+groups:
+  - label: same_seed
+    set: {run.setup_speedup: 10}
+    repeats: 5
+  - label: seeds
+    set: {run.setup_speedup: 10}
+    sweep:
+      run.seed: {range: [1, 61]}
+      run.speedup: [1, 2, 5, 10, 20]
+  - label: full_1x
+    sweep:
+      run.seed: {range: [1, 61]}

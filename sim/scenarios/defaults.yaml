@@ -1,0 +1,84 @@
+# Scenario defaults. A scenario file overrides any subset of these keys (deep merge); a batch file
+# (scenarios/batches/*.yaml) then sweeps over keys of the merged scenario. Unknown keys are an error.
+
+name: unnamed
+description: ""
+
+vehicle:                     # parameter-family point (theta)
+  mass_kg: 1.40              # take-off mass; max thrust stays fixed (airframes/make_airframe.py)
+  derate: 1.0                # available fraction of max thrust, applied as MOT_SPIN_MAX like on the real vehicle
+
+environment:
+  wind:                      # SITL wind, constant with altitude (SIM_WIND_T = 1)
+    speed_ms: 0.0            # SIM_WIND_SPD
+    dir_deg: 180.0           # SIM_WIND_DIR, direction the wind comes from
+    turbulence_ms: 0.0       # SIM_WIND_TURB, std of SITL's (high-frequency) turbulence
+  gusts:                     # seeded low-frequency gusts on top of the mean wind (SITL has none of its own: its
+                             # turbulence is white-ish). Each horizontal component is a first-order Gauss-Markov
+                             # process; the client writes the total wind to SIM_WIND_SPD/DIR during the outer loop
+    sigma_ms: 0.0            # std of each horizontal gust component [m/s]; 0 = off
+    tau_s: 2.0               # correlation time [s]
+    rate_hz: 10.0            # update rate of SIM_WIND_* [Hz, FC time]
+  sensors: gps               # sensor profile -> params/sensors_<name>.parm: gps (A: GPS + baro) or
+                             # flow (B: optical flow + rangefinder, no GPS; the client sets the EKF origin)
+  params: {}                 # further firmware / SIM_ parameters, applied last
+
+task:
+  type: steps                # steps: piecewise-constant position setpoints (task.steps)
+                             # trajectory: smooth closed curve with velocity / acceleration feedforward (task.trajectory)
+  alt_m: 5.0                 # FC takes off to this altitude in GUIDED, then hands over to the outer loop
+  settle_s: 3.0              # FC-time hover before handover
+  duration_s: 30.0           # outer-loop time
+  steps:                     # [t_s, dN, dE, dD] relative to the handover position, from t_s on
+    - [0.0, 0.0, 0.0, 0.0]
+  trajectory:                # type trajectory (client/trajectory.py); starts and ends at the handover point
+    shape: circle            # circle | figure8
+    size_m: 1.5              # circle radius / figure-8 half-width [m]
+    period_s: 10.0           # one cycle at full speed [s]
+    cycles: 2.0
+    start_s: 4.0             # hold before the motion starts [s]
+    ramp_s: 3.0              # smoothstep speed ramp at the start and at the end [s]
+    vertical_m: 0.0          # altitude excursion on each cycle [m]
+  events: []                 # disturbances during the run, at outer-loop times:
+                             #   {t_s: 10, params: {SIM_WIND_SPD: 5}}      any firmware / SIM_ parameters, e.g.
+                             #     {MOT_SPIN_MAX: 0.8} thrust derate, {SIM_ENGINE_MUL: 0.7, SIM_ENGINE_FAIL: 1}
+                             #     motor 1 at 70 %
+                             #   {t_s: 10, push: {n: 4, e: 0, d: 0, ms: 300}}   a push: extra acceleration
+                             #     [m/s^2] in NED for ms milliseconds (SITL SIM_SHOVE_*, body frame, converted
+                             #     with the handover yaw)
+                             #   {t_s: 10, derate: 0.85}   from now on 85 % of the variant's available thrust
+                             #     (MOT_SPIN_MAX, same mapping as vehicle.derate): theta changes in flight
+  pilot_modes: []            # takeover tests: a pilot / GCS on a second link sets FC modes at these outer-loop
+                             # times, [{t_s: 8, mode: BRAKE}, {t_s: 14, mode: LAND}]. After a takeover the
+                             # client sends nothing, so the pilot is also the one who has to land
+
+controller:
+  law: pd                    # client/laws.py name or "package.module:Class"
+  hover_thrust: fc           # hover-thrust prior given to the law: "fc" = MOT_THST_HOVER read at handover
+                             # (starts at 0.58 from sakr3_base.parm and learns slowly, so it carries a
+                             # little information about the variant), or a number used for every variant
+  args:                      # constructor arguments besides hover_thrust (pd: gains, max_tilt_deg, thrust_limits)
+    gains: {ki_xy: 0.2}      # pd: horizontal integrator on. Without it the PD holds 6-9 cm off in still air
+                             # (SITL EKF velocity / attitude bias, see README) and ~0.5 m off in 2 m/s wind
+
+safety:                      # client supervisor, client/supervisor.py SafetyLimits
+  max_tilt_deg: 25.0
+  thrust_min: 0.05
+  thrust_max: 0.95
+  fence_radius_m: 10.0
+  alt_min_m: 2.0
+  alt_max_m: 10.0
+  max_att_deg: 45.0
+  state_timeout_s: 0.3       # trip on a gap this long between state samples (FC time) or with no data (wall time)
+
+metrics:
+  final_window_s: 2.0        # last part of each segment used for final error / hold statistics
+  band_m: 0.1                # settling band around the new setpoint
+
+pass: {}                     # upper bounds on metrics, fnmatch patterns allowed, e.g. {iae_m_s: 8, "seg*_overshoot_pct": 25}
+
+run:
+  seed: 1                    # SITL noise seed (runner/seed.py)
+  speedup: 1.0               # SITL speedup while the outer loop runs
+  setup_speedup: null        # speedup for boot, takeoff and landing (FC's own controllers); null = speedup
+  keep_bin: true             # keep the .BIN log in the run directory

@@ -1,0 +1,13 @@
+# SAKR3 firmware-side parameters for SITL (loaded after copter.parm + copter-X.parm).
+# Motor/ESC values must match airframes/sakr3_spec.yaml and, eventually, the real vehicle's
+# parameter export from the collaborator.
+FRAME_CLASS 1
+FRAME_TYPE 1
+MOT_THST_EXPO 0.65
+MOT_SPIN_MIN 0.15
+MOT_SPIN_MAX 0.95
+MOT_PWM_MIN 1000
+MOT_PWM_MAX 2000
+MOT_BAT_VOLT_MAX 0
+MOT_THST_HOVER 0.58
+BATT_CAPACITY 4200

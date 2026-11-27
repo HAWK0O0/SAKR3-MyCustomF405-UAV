@@ -1,0 +1,20 @@
+name: t5_steps_wind
+description: >
+  T5 base scenario: the T4 step sequence with every random source of SITL switched on, so that the
+  seed matters: 2 m/s wind from 45 deg with 1 m/s turbulence, baro noise (sensor profile gps).
+  PD test controller with its horizontal integrator (scenario default) to hold against the mean wind.
+
+environment:
+  wind:
+    speed_ms: 2.0
+    dir_deg: 45.0
+    turbulence_ms: 1.0
+
+task:
+  duration_s: 56.0
+  steps:
+    - [0.0, 0.0, 0.0, 0.0]
+    - [8.0, 0.0, 0.0, -1.0]
+    - [20.0, 0.0, 0.0, 0.0]
+    - [32.0, 2.0, 0.0, 0.0]
+    - [44.0, 0.0, 0.0, 0.0]

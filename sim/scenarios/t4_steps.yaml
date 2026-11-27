@@ -1,0 +1,24 @@
+name: t4_steps
+description: >
+  T4 flight as a scenario (regression case): SAKR3 1.40 kg, no wind, the M2 PD controller without
+  horizontal integrator; hold 8 s, altitude +1 m, back, 2 m north, back.
+  Final errors are on true position here (T4 judged the EKF estimate), so they include the EKF's
+  height-reference error from baro noise (2-11 cm depending on the seed) and the PD's 6-9 cm
+  horizontal hold offset; T4's 5 cm final-error check does not apply.
+
+task:
+  duration_s: 56.0
+  steps:
+    - [0.0, 0.0, 0.0, 0.0]
+    - [8.0, 0.0, 0.0, -1.0]
+    - [20.0, 0.0, 0.0, 0.0]
+    - [32.0, 2.0, 0.0, 0.0]
+    - [44.0, 0.0, 0.0, 0.0]
+
+controller:
+  args:
+    gains: {ki_xy: 0.0}
+
+pass:                       # T4's step-shape checks
+  "seg*_overshoot_pct": 25
+  "seg*_rise_s": 4

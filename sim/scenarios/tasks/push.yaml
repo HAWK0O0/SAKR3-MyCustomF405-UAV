@@ -1,0 +1,13 @@
+name: push
+description: >
+  Hold position through three pushes of 5 m/s^2 for 0.3 s (1.5 m/s of velocity each): north at 6 s,
+  west at 14 s, up at 22 s (SITL SIM_SHOVE_*). ev{i}_max_dev_m / ev{i}_recover_s measure each response.
+task:
+  duration_s: 30.0
+  events:
+    - {t_s: 6.0, push: {n: 5.0, e: 0.0, d: 0.0, ms: 300}}
+    - {t_s: 14.0, push: {n: 0.0, e: -5.0, d: 0.0, ms: 300}}
+    - {t_s: 22.0, push: {n: 0.0, e: 0.0, d: -5.0, ms: 300}}
+pass:                       # proposal, set before the first flight
+  "ev*_max_dev_m": 1.0
+  "ev*_recover_s": 5.0

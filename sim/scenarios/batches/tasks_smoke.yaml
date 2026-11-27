@@ -1,0 +1,13 @@
+# Every task of scenarios/tasks/ once (1.40 kg, profile A, seed 1): does each task type fly and produce
+# its metrics? Quick check after changes to the task library (~2 min on 7 workers).
+name: tasks_smoke
+description: each task in scenarios/tasks/ once, SAKR3 1.40 kg, profile A, seed 1
+workers: 7
+groups:
+  - {label: hover_gust, base: ../tasks/hover_gust.yaml, set: {run.setup_speedup: 10}}
+  - {label: steps, base: ../tasks/steps.yaml, set: {run.setup_speedup: 10}}
+  - {label: circle, base: ../tasks/circle.yaml, set: {run.setup_speedup: 10}}
+  - {label: figure8, base: ../tasks/figure8.yaml, set: {run.setup_speedup: 10}}
+  - {label: push, base: ../tasks/push.yaml, set: {run.setup_speedup: 10}}
+  - {label: motor_fault, base: ../tasks/motor_fault.yaml, set: {run.setup_speedup: 10}}
+  - {label: derate_drop, base: ../tasks/derate_drop.yaml, set: {run.setup_speedup: 10}}
