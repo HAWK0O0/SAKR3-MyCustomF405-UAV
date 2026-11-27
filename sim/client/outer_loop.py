@@ -159,11 +159,11 @@ class OuterLoop:
             if res.t0_ms is None:
                 res.t0_ms = t_ms
             t = (t_ms - res.t0_ms) / 1e3
+            if last_t is not None and t - last_t > sup.lim.state_timeout_s:   # before the duration check:
+                res.trip, res.trip_t = f"state gap {t - last_t:.3f} s (FC time)", t   # a gap that runs past
+                break                                                       # the end is not a completion
             if t > duration_s:
                 res.end_reason = "duration"
-                break
-            if last_t is not None and t - last_t > sup.lim.state_timeout_s:
-                res.trip, res.trip_t = f"state gap {t - last_t:.3f} s (FC time)", t
                 break
             dt = 1.0 / STATE_HZ if last_t is None else min(max(t - last_t, 0.005), 0.1)
             last_t, last_state_wall = t, wall
@@ -179,6 +179,8 @@ class OuterLoop:
             if fault:                                # never sent, not even clamped: trip in this step
                 clamped, res.fault = False, fault
                 reason = reason or fault
+                cmd = Command(math.nan, math.nan, math.nan, math.nan)   # logged as NaN; the bad values
+                                                                        # are in the fault message
             else:
                 cmd, clamped = sup.clamp(cmd)
             thrust32 = float(np.float32(cmd.thrust))   # exactly what the FC will log in GUIA.Thrust
